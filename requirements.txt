@@ -1,0 +1,6 @@
+streamlit>=1.36
+anthropic>=0.40
+langgraph>=0.2
+langchain-core>=0.3
+requests>=2.31
+pandas>=2.0
