@@ -13,6 +13,7 @@ latency and cost matter more than raw capability.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import TypedDict, Optional
 
@@ -28,24 +29,29 @@ class PipelineState(TypedDict, total=False):
     """State passed between LangGraph nodes."""
     api_key: str
     target_company: str
-    corpus: list[dict]                    # from curated_data
+    corpus: list[dict]
     use_web_search: bool
     discovered_edges: list[SupplierEdge]
     verified_edges: list[SupplierEdge]
     scored_edges: list[SupplierEdge]
-    trace: list[dict]                     # step-by-step audit log
+    trace: list[dict]
 
 
 # ------------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------------
 
+def _client(api_key: str) -> Anthropic:
+    return Anthropic(api_key=api_key)
+
+
 def _extract_json(text: str) -> Optional[dict | list]:
-    import re
+    """Strip code fences and prose, then parse. Returns None on failure."""
     t = text.strip()
-    # Strip code fences: ```json ... ``` or ``` ... ```
+    # Strip opening fence: ```json or ```
     t = re.sub(r'^```(?:json)?\s*', '', t)
-    t = re.sub(r'\s*```$', '', t.strip())
+    # Strip closing fence
+    t = re.sub(r'\s*```\s*$', '', t)
     t = t.strip()
     # Try direct parse
     try:
@@ -87,7 +93,7 @@ Rules:
 - Mark extraction_mode as "explicit" if the relationship is stated
   directly, or "inferred" if you deduced it from context.
 
-Return STRICT JSON, no prose outside it:
+Return STRICT JSON only, no prose before or after the JSON block:
 {
   "edges": [
     {
@@ -98,7 +104,7 @@ Return STRICT JSON, no prose outside it:
       "location": "<country/region or empty>",
       "source_url": "<the URL from the corpus>",
       "excerpt": "<short verbatim quote>",
-      "extraction_mode": "explicit"|"inferred",
+      "extraction_mode": "explicit|inferred",
       "reasoning": "<one sentence>"
     }
   ]
@@ -133,7 +139,6 @@ def discovery_node(state: PipelineState) -> dict:
     data = _extract_json(raw) or {"edges": []}
 
     edges: list[SupplierEdge] = []
-    # index corpus by url for quick authority/date lookup
     by_url = {d["source_url"]: d for d in corpus}
 
     for e in data.get("edges", []):
@@ -185,14 +190,14 @@ Rules:
 - If no other source mentions the relationship, mark "unverified".
 - Never invent a confirming source. Only cite URLs present in the corpus.
 
-Return STRICT JSON:
+Return STRICT JSON only, no prose before or after:
 {
   "results": [
     {
       "edge_id": "<id>",
-      "status": "verified"|"partial"|"unverified",
-      "confirming_source_url": "<url or empty>",
-      "confirming_excerpt": "<verbatim or empty>",
+      "status": "verified|partial|unverified",
+      "confirming_source_url": "<url or empty string>",
+      "confirming_excerpt": "<verbatim or empty string>",
       "reasoning": "<one sentence>"
     }
   ]
@@ -228,6 +233,7 @@ def verification_node(state: PipelineState) -> dict:
 
     by_id = {e.id: e for e in edges}
     by_url = {d["source_url"]: d for d in corpus}
+
     for r in data.get("results", []):
         eid = r.get("edge_id")
         if eid not in by_id:
@@ -259,20 +265,17 @@ def verification_node(state: PipelineState) -> dict:
 # ------------------------------------------------------------------
 # 3. Uncertainty Agent (deterministic, no LLM)
 # ------------------------------------------------------------------
-# We do this deterministically. Uncertainty is a math problem, not a
-# generative one. If we let an LLM pick the score, we cannot audit it.
 
 UNCERTAINTY_WEIGHTS = {
-    "source_count": 0.25,      # more independent sources => higher confidence
-    "source_authority": 0.30,  # average authority of sources
-    "verification": 0.25,      # verified > partial > unverified
-    "extraction_mode": 0.10,   # explicit > inferred
-    "recency": 0.10,           # more recent => slightly more confident
+    "source_count": 0.25,
+    "source_authority": 0.30,
+    "verification": 0.25,
+    "extraction_mode": 0.10,
+    "recency": 0.10,
 }
 
 
 def _recency_score(date_str: str) -> float:
-    """Very simple recency proxy: 1.0 if 2025+, 0.7 if 2024, 0.4 older."""
     if not date_str:
         return 0.5
     year = date_str[:4]
@@ -300,21 +303,12 @@ def uncertainty_node(state: PipelineState) -> dict:
             edge.uncertainty_breakdown = {"reason": "no sources"}
             continue
 
-        # source_count: cap at 3 for the score
         sc_raw = min(len(edge.sources), 3)
         source_count = sc_raw / 3.0
-
-        # source_authority: mean authority across sources
         source_authority = sum(s.authority for s in edge.sources) / len(edge.sources)
-
-        # verification
         verification = _verification_score(edge.verification_status)
-
-        # extraction_mode: fraction of sources that were explicit
         explicit = sum(1 for s in edge.sources if s.extraction_mode == "explicit")
         extraction_mode = explicit / len(edge.sources)
-
-        # recency: max recency across sources
         recency = max(_recency_score(s.date) for s in edge.sources)
 
         w = UNCERTAINTY_WEIGHTS
@@ -341,19 +335,18 @@ def uncertainty_node(state: PipelineState) -> dict:
 
     _log(state, "uncertainty", "scored", {
         "n_edges": len(edges),
-        "mean_score": round(sum(e.uncertainty_score for e in edges) / max(len(edges), 1), 3),
+        "mean_score": round(
+            sum(e.uncertainty_score for e in edges) / max(len(edges), 1), 3
+        ),
     })
     return {"scored_edges": edges, "trace": state.get("trace", [])}
 
 
 # ------------------------------------------------------------------
-# 4. Aggregation Agent (deterministic concentration analytics)
+# 4. Aggregation Agent
 # ------------------------------------------------------------------
-# Also deterministic. Concentration risk is graph math.
 
 def aggregation_node(state: PipelineState) -> dict:
-    # This node does not modify edges. It exists so the graph has a
-    # clean terminal node and so we can trace that aggregation happened.
     edges = state.get("scored_edges", [])
     _log(state, "aggregation", "complete", {"total_edges": len(edges)})
     return {"trace": state.get("trace", [])}
