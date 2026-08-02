@@ -40,21 +40,26 @@ class PipelineState(TypedDict, total=False):
 # helpers
 # ------------------------------------------------------------------
 
-def _client(api_key: str) -> Anthropic:
-    return Anthropic(api_key=api_key)
-
-
 def _extract_json(text: str) -> Optional[dict | list]:
-    """Strip code fences and parse. Returns None on any failure."""
+    import re
     t = text.strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        if t.lower().startswith("json"):
-            t = t[4:].lstrip()
+    # Strip code fences: ```json ... ``` or ``` ... ```
+    t = re.sub(r'^```(?:json)?\s*', '', t)
+    t = re.sub(r'\s*```$', '', t.strip())
+    t = t.strip()
+    # Try direct parse
     try:
         return json.loads(t)
     except Exception:
-        return None
+        pass
+    # Find first { or [ and parse from there
+    for i, ch in enumerate(t):
+        if ch in ('{', '['):
+            try:
+                return json.loads(t[i:])
+            except Exception:
+                pass
+    return None
 
 
 def _log(state: PipelineState, agent: str, event: str, payload: dict) -> None:
