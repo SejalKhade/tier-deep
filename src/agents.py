@@ -46,25 +46,24 @@ def _client(api_key: str) -> Anthropic:
 
 
 def _extract_json(text: str) -> Optional[dict | list]:
-    """Strip code fences and prose, then parse. Returns None on failure."""
-    t = text.strip()
-    # Strip opening fence: ```json or ```
-    t = re.sub(r'^```(?:json)?\s*', '', t)
-    # Strip closing fence
-    t = re.sub(r'\s*```\s*$', '', t)
-    t = t.strip()
-    # Try direct parse
+    """Extract JSON from model output that may be wrapped in code fences."""
+    import re
+
+    # First try: direct parse with no modification
     try:
-        return json.loads(t)
+        return json.loads(text.strip())
     except Exception:
         pass
-    # Find first { or [ and parse from there
-    for i, ch in enumerate(t):
-        if ch in ('{', '['):
-            try:
-                return json.loads(t[i:])
-            except Exception:
-                pass
+
+    # Second try: pull everything between the first { or [ and the last } or ]
+    # This handles ```json\n{...}\n``` and any surrounding prose
+    match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            pass
+
     return None
 
 
