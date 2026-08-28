@@ -32,45 +32,87 @@ st.markdown(
     """
     <style>
     :root {
-        --ink: #14161a;
-        --ink-soft: #4a4f57;
-        --line: #d9dbe0;
-        --bg-panel: #f7f8fa;
-        --accent: #1f3a68;
+        --td-ink: var(--text-color, #14161a);
+        --td-ink-soft: color-mix(in srgb, var(--td-ink) 65%, transparent);
+        --td-line: color-mix(in srgb, var(--td-ink) 16%, transparent);
+        --td-panel: color-mix(in srgb, var(--td-ink) 5%, var(--background-color, #ffffff));
+        --td-accent: #3b6ea5;
+        --td-verified: #22c55e;
+        --td-partial: #eab308;
+        --td-unverified: #ef4444;
+        --td-neutral: #8b8f98;
+        --td-high: #ef4444;
+        --td-medium: #eab308;
+        --td-low: #4d9e3f;
     }
     html, body, [class*="css"] {
         font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
-        color: var(--ink);
     }
-    h1 { font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; }
-    h2 { font-weight: 600; font-size: 1.25rem; margin-top: 1.2rem; }
-    h3 { font-weight: 600; font-size: 1.05rem; color: var(--ink-soft); }
+    h1 { font-weight: 700; font-size: 2rem; letter-spacing: -0.01em; }
+    h2 { font-weight: 600; font-size: 1.25rem; margin-top: 1.4rem; }
+    h3 { font-weight: 600; font-size: 1.05rem; color: var(--td-ink-soft); }
+
     .metric-card {
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 14px 16px;
-        background: var(--bg-panel);
+        border: 1px solid var(--td-line);
+        border-top: 3px solid var(--td-accent);
+        border-radius: 10px;
+        padding: 14px 18px 16px;
+        background: var(--td-panel);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
-    .metric-label { font-size: 0.78rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
-    .metric-value { font-size: 1.4rem; font-weight: 600; color: var(--ink); margin-top: 4px; }
+    .metric-label {
+        font-size: 0.72rem; color: var(--td-ink-soft);
+        text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+    }
+    .metric-value { font-size: 1.55rem; font-weight: 700; color: var(--td-ink); margin-top: 4px; line-height: 1.15; }
+    .metric-sub { font-size: 0.72rem; color: var(--td-ink-soft); margin-top: 3px; }
+
     .edge-box {
-        border: 1px solid var(--line);
-        border-left: 3px solid var(--accent);
-        border-radius: 4px;
-        padding: 10px 14px;
-        margin-bottom: 8px;
-        background: white;
+        border: 1px solid var(--td-line);
+        border-left: 4px solid var(--td-accent);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        background: var(--td-panel);
+        color: var(--td-ink);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    .risk-high { border-left: 3px solid #991b1b; }
-    .risk-medium { border-left: 3px solid #a16207; }
-    .risk-low { border-left: 3px solid #4d7c0f; }
+    .edge-box .edge-title { font-size: 1rem; }
+    .edge-box .edge-meta { color: var(--td-ink-soft); font-size: 0.85rem; }
+    .edge-box .edge-id { font-size: 0.72rem; color: var(--td-ink-soft); margin-top: 6px; }
+
+    .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-right: 6px;
+    }
+    .badge-verified   { background: color-mix(in srgb, var(--td-verified) 18%, transparent);   color: var(--td-verified); }
+    .badge-partial    { background: color-mix(in srgb, var(--td-partial) 20%, transparent);    color: var(--td-partial); }
+    .badge-unverified { background: color-mix(in srgb, var(--td-unverified) 16%, transparent); color: var(--td-unverified); }
+    .badge-unchecked  { background: color-mix(in srgb, var(--td-neutral) 20%, transparent);    color: var(--td-neutral); }
+    .badge-tier       { background: color-mix(in srgb, var(--td-accent) 16%, transparent);     color: var(--td-accent); }
+
+    .risk-high   { border-left: 4px solid var(--td-high); }
+    .risk-medium { border-left: 4px solid var(--td-medium); }
+    .risk-low    { border-left: 4px solid var(--td-low); }
+    .badge-sev-high   { background: color-mix(in srgb, var(--td-high) 16%, transparent);   color: var(--td-high); }
+    .badge-sev-medium { background: color-mix(in srgb, var(--td-medium) 20%, transparent); color: var(--td-medium); }
+    .badge-sev-low    { background: color-mix(in srgb, var(--td-low) 16%, transparent);    color: var(--td-low); }
+
     .agent-step {
-        background: #f0f2f6;
-        border-radius: 4px;
+        background: var(--td-panel);
+        border: 1px solid var(--td-line);
+        border-radius: 6px;
         padding: 8px 12px;
         margin-bottom: 6px;
         font-family: "SF Mono", "Monaco", monospace;
-        font-size: 0.85rem;
+        font-size: 0.82rem;
+        color: var(--td-ink);
     }
     code { font-size: 0.85em; }
     </style>
@@ -155,16 +197,21 @@ corpus = get_corpus(target) if mode.startswith("Curated") else []
 
 col1, col2, col3 = st.columns(3)
 col1.markdown(
-    f"<div class='metric-card'><div class='metric-label'>Target</div>"
-    f"<div class='metric-value'>{target}</div></div>", unsafe_allow_html=True,
+    f"<div class='metric-card'><div class='metric-label'>Target company</div>"
+    f"<div class='metric-value'>{target}</div>"
+    f"<div class='metric-sub'>Root node of the supplier graph</div></div>",
+    unsafe_allow_html=True,
 )
 col2.markdown(
     f"<div class='metric-card'><div class='metric-label'>Corpus size</div>"
-    f"<div class='metric-value'>{len(corpus)} docs</div></div>", unsafe_allow_html=True,
+    f"<div class='metric-value'>{len(corpus)} docs</div>"
+    f"<div class='metric-sub'>Source documents available to Discovery</div></div>",
+    unsafe_allow_html=True,
 )
 col3.markdown(
     f"<div class='metric-card'><div class='metric-label'>Mode</div>"
-    f"<div class='metric-value'>{'Curated' if corpus else 'Live'}</div></div>",
+    f"<div class='metric-value'>{'Curated' if corpus else 'Live'}</div>"
+    f"<div class='metric-sub'>{'Reproducible, fixed corpus' if corpus else 'SEC + web, non-deterministic'}</div></div>",
     unsafe_allow_html=True,
 )
 
@@ -237,35 +284,41 @@ if ss.result:
         n_verified = sum(1 for e in edges if e.verification_status == "verified")
 
         cols = st.columns(5)
-        for col, label, val in zip(
+        for col, label, val, sub in zip(
             cols,
             ["Total edges", "Tier 1", "Tier 2 / 3", "Verified", "Mean confidence"],
             [len(edges), n_tier1, n_tier2 + n_tier3, n_verified, round(mean_conf, 2)],
+            [
+                "Claimed relationships in this graph",
+                "Direct suppliers to the target",
+                "Sub-tier suppliers, the usual blind spot",
+                "Independently confirmed by a 2nd source",
+                "Average uncertainty score, 0 to 1",
+            ],
         ):
             col.markdown(
                 f"<div class='metric-card'><div class='metric-label'>{label}</div>"
-                f"<div class='metric-value'>{val}</div></div>",
+                f"<div class='metric-value'>{val}</div>"
+                f"<div class='metric-sub'>{sub}</div></div>",
                 unsafe_allow_html=True,
             )
 
         st.markdown("### Edges (sorted by confidence, ascending)")
         st.caption("Lowest-confidence edges first, because those are where you look for hallucinations.")
         for e in sorted(edges, key=lambda x: x.uncertainty_score):
-            status_color = {
-                "verified": "#14532d",
-                "partial": "#78350f",
-                "unverified": "#7f1d1d",
-                "unchecked": "#4a4f57",
-            }.get(e.verification_status, "#4a4f57")
+            status_class = f"badge-{e.verification_status}" if e.verification_status in (
+                "verified", "partial", "unverified", "unchecked"
+            ) else "badge-unchecked"
             st.markdown(
                 f"<div class='edge-box'>"
-                f"<b>{e.parent}</b> &lt;-- <b>{e.supplier}</b> "
-                f"&nbsp;&nbsp;<span style='color:#4a4f57'>tier {e.tier} / {e.component or 'unspecified'}</span>"
-                f"<br/>"
-                f"<span style='color:{status_color}'>{e.verification_status.upper()}</span> "
-                f"&nbsp;&nbsp;confidence={e.uncertainty_score} "
-                f"&nbsp;&nbsp;sources={len(e.sources)}"
-                f"<br/><span style='font-size:0.8em;color:#4a4f57'>id={e.id}</span>"
+                f"<div class='edge-title'><b>{e.parent}</b> &lt;-- <b>{e.supplier}</b></div>"
+                f"<div class='edge-meta'>tier {e.tier} / {e.component or 'unspecified'}</div>"
+                f"<div style='margin-top:8px'>"
+                f"<span class='badge {status_class}'>{e.verification_status}</span>"
+                f"<span class='badge badge-tier'>confidence {e.uncertainty_score}</span>"
+                f"<span class='badge badge-tier'>{len(e.sources)} source{'s' if len(e.sources) != 1 else ''}</span>"
+                f"</div>"
+                f"<div class='edge-id'>id={e.id}</div>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -321,13 +374,13 @@ if ss.result and ss.result.get("scored_edges"):
     else:
         for r in risks:
             cls = f"risk-{r.severity}"
+            sev_cls = f"badge-sev-{r.severity}"
             st.markdown(
                 f"<div class='edge-box {cls}'>"
-                f"<b>{r.risk_type.replace('_',' ').title()}</b> "
-                f"&nbsp;&nbsp;<span style='color:#4a4f57'>severity: {r.severity}</span>"
-                f"<br/>{r.description}"
-                f"<br/><span style='font-size:0.8em;color:#4a4f57'>"
-                f"affected_edges={r.affected_edges} evidence={r.evidence}</span>"
+                f"<div class='edge-title'><b>{r.risk_type.replace('_', ' ').title()}</b> "
+                f"<span class='badge {sev_cls}'>{r.severity} severity</span></div>"
+                f"<div style='margin-top:6px'>{r.description}</div>"
+                f"<div class='edge-id'>affected_edges={r.affected_edges} evidence={r.evidence}</div>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
