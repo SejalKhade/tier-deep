@@ -45,22 +45,40 @@ def _client(api_key: str) -> Anthropic:
 
 
 def _extract_json(text: str) -> Optional[dict | list]:
-    """Strip code fences and parse. Returns None on any failure."""
+    """
+    Strip code fences and parse JSON. On failure, attempt to extract
+    a partial JSON object by finding the last complete closing brace.
+    Returns None only if no valid JSON can be recovered.
+    """
     t = text.strip()
+    # strip code fences
     if t.startswith("```"):
         t = t.strip("`")
         if t.lower().startswith("json"):
             t = t[4:].lstrip()
+    # direct parse
     try:
         return json.loads(t)
     except Exception:
-        return None
+        pass
+    # attempt partial recovery: find last complete } or ]
+    for end_char, start_char in [("}", "{"), ("]", "[")]:
+        idx = t.rfind(end_char)
+        while idx > 0:
+            candidate = t[:idx + 1]
+            # find matching open
+            start = candidate.find(start_char)
+            if start >= 0:
+                try:
+                    return json.loads(candidate[start:])
+                except Exception:
+                    pass
+            idx = t.rfind(end_char, 0, idx)
+    return None
 
 
-def _log(state: PipelineState, agent: str, event: str, payload: dict) -> None:
-    state.setdefault("trace", []).append(
-        {"agent": agent, "event": event, "payload": payload}
-    )
+def _make_log_entry(agent: str, event: str, payload: dict) -> dict:
+    return {"agent": agent, "event": event, "payload": payload}
 
 
 # ------------------------------------------------------------------
@@ -105,8 +123,9 @@ def discovery_node(state: PipelineState) -> dict:
     company = state["target_company"]
     corpus = state.get("corpus", [])
     if not corpus:
-        _log(state, "discovery", "empty_corpus", {"company": company})
-        return {"discovered_edges": [], "trace": state.get("trace", [])}
+        trace = list(state.get("trace", []))
+        trace.append(_make_log_entry("discovery", "empty_corpus", {"company": company}))
+        return {"discovered_edges": [], "trace": trace}
 
     corpus_text = "\n\n".join(
         f"[{i}] source_url={d['source_url']}\n"
@@ -120,7 +139,7 @@ def discovery_node(state: PipelineState) -> dict:
     client = _client(state["api_key"])
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=2000,
+        max_tokens=4096,
         system=DISCOVERY_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -128,14 +147,20 @@ def discovery_node(state: PipelineState) -> dict:
     data = _extract_json(raw) or {"edges": []}
 
     edges: list[SupplierEdge] = []
-    # index corpus by url for quick authority/date lookup
     by_url = {d["source_url"]: d for d in corpus}
 
     for e in data.get("edges", []):
         url = e.get("source_url", "")
-        meta = by_url.get(url, {})
+        # fuzzy url match: if exact match fails, try substring match
+        meta = by_url.get(url)
+        if meta is None:
+            for corpus_url, corpus_doc in by_url.items():
+                if url in corpus_url or corpus_url in url:
+                    meta = corpus_doc
+                    break
+        meta = meta or {}
         source = Source(
-            url=url,
+            url=url or meta.get("source_url", ""),
             source_type=meta.get("source_type", "unknown"),
             authority=float(meta.get("authority", 0.5)),
             date=meta.get("date", ""),
@@ -155,11 +180,13 @@ def discovery_node(state: PipelineState) -> dict:
             )
         )
 
-    _log(state, "discovery", "extracted", {
+    trace = list(state.get("trace", []))
+    trace.append(_make_log_entry("discovery", "extracted", {
         "n_edges": len(edges),
-        "raw_output_preview": raw[:300],
-    })
-    return {"discovered_edges": edges, "trace": state.get("trace", [])}
+        "parse_succeeded": bool(data.get("edges")),
+        "raw_output_preview": raw[:400],
+    }))
+    return {"discovered_edges": edges, "trace": trace}
 
 
 # ------------------------------------------------------------------
@@ -199,7 +226,9 @@ def verification_node(state: PipelineState) -> dict:
     edges = state.get("discovered_edges", [])
     corpus = state.get("corpus", [])
     if not edges:
-        return {"verified_edges": [], "trace": state.get("trace", [])}
+        trace = list(state.get("trace", []))
+        trace.append(_make_log_entry("verification", "no_edges", {}))
+        return {"verified_edges": [], "trace": trace}
 
     edges_text = "\n".join(
         f"- id={e.id} parent={e.parent!r} supplier={e.supplier!r} "
@@ -214,7 +243,7 @@ def verification_node(state: PipelineState) -> dict:
     client = _client(state["api_key"])
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=2000,
+        max_tokens=4096,
         system=VERIFICATION_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -231,24 +260,31 @@ def verification_node(state: PipelineState) -> dict:
         edge.verification_status = r.get("status", "unverified")
         edge.verification_reasoning = r.get("reasoning", "")
         confirm_url = r.get("confirming_source_url", "")
-        if confirm_url and confirm_url in by_url and edge.verification_status == "verified":
-            meta = by_url[confirm_url]
+        # fuzzy match for confirming url too
+        confirm_meta = by_url.get(confirm_url)
+        if confirm_meta is None and confirm_url:
+            for cu, cd in by_url.items():
+                if confirm_url in cu or cu in confirm_url:
+                    confirm_meta = cd
+                    break
+        if confirm_meta and edge.verification_status == "verified":
             edge.sources.append(Source(
                 url=confirm_url,
-                source_type=meta.get("source_type", "unknown"),
-                authority=float(meta.get("authority", 0.5)),
-                date=meta.get("date", ""),
+                source_type=confirm_meta.get("source_type", "unknown"),
+                authority=float(confirm_meta.get("authority", 0.5)),
+                date=confirm_meta.get("date", ""),
                 excerpt=r.get("confirming_excerpt", ""),
                 extraction_mode="explicit",
             ))
 
-    _log(state, "verification", "checked", {
+    trace = list(state.get("trace", []))
+    trace.append(_make_log_entry("verification", "checked", {
         "n_edges": len(edges),
         "verified": sum(1 for e in edges if e.verification_status == "verified"),
         "partial": sum(1 for e in edges if e.verification_status == "partial"),
         "unverified": sum(1 for e in edges if e.verification_status == "unverified"),
-    })
-    return {"verified_edges": edges, "trace": state.get("trace", [])}
+    }))
+    return {"verified_edges": edges, "trace": trace}
 
 
 # ------------------------------------------------------------------
@@ -334,11 +370,12 @@ def uncertainty_node(state: PipelineState) -> dict:
             ),
         }
 
-    _log(state, "uncertainty", "scored", {
+    trace = list(state.get("trace", []))
+    trace.append(_make_log_entry("uncertainty", "scored", {
         "n_edges": len(edges),
         "mean_score": round(sum(e.uncertainty_score for e in edges) / max(len(edges), 1), 3),
-    })
-    return {"scored_edges": edges, "trace": state.get("trace", [])}
+    }))
+    return {"scored_edges": edges, "trace": trace}
 
 
 # ------------------------------------------------------------------
@@ -350,5 +387,6 @@ def aggregation_node(state: PipelineState) -> dict:
     # This node does not modify edges. It exists so the graph has a
     # clean terminal node and so we can trace that aggregation happened.
     edges = state.get("scored_edges", [])
-    _log(state, "aggregation", "complete", {"total_edges": len(edges)})
-    return {"trace": state.get("trace", [])}
+    trace = list(state.get("trace", []))
+    trace.append(_make_log_entry("aggregation", "complete", {"total_edges": len(edges)}))
+    return {"trace": trace}
